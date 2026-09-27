@@ -466,3 +466,4 @@ ffmpeg -y -r 60 -i gource.ppm -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p
 ```
 
 De GitHub Actions workflow (`.github/workflows/gource.yaml`) genereert de video automatisch bij elke release.
+
