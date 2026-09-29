@@ -141,11 +141,23 @@ async function main(): Promise<number> {
     const cookiejar_filename: string = options["<cookiejar>"];
     const foundry_version: string = options["<version>"];
     const log_level: string = options["--log-level"].toLowerCase();
-    const retries: number = parseInt(options["--retry"]);
+    const retry_option: string = options["--retry"];
     HEADERS.set("User-Agent", options["--user-agent"]);
 
     // Setup logging.
     logger = createLogger("ReleaseURL", log_level);
+
+    // Validate the whole argument: parseInt would accept prefixes such as
+    // "1abc", "1.5", or "1e2" (NaN would run the fetch loop zero times with
+    // a misleading error), and a huge digit string parses to Infinity,
+    // which would make the loop unbounded.
+    const retries: number = parseInt(retry_option, 10);
+    if (!/^\d+$/.test(retry_option) || !Number.isSafeInteger(retries)) {
+        logger.error(
+            `--retry must be a non-negative safe integer.  Found: ${retry_option}`,
+        );
+        return -1;
+    }
 
     // Setup global cookie jar, storage, and fetch library
     logger.debug(`Loading cookies from: ${cookiejar_filename}`);
@@ -172,6 +184,23 @@ async function main(): Promise<number> {
     );
 
     if (releaseURL) {
+        // The endpoint is keyed on the build number alone, so requesting a
+        // nonexistent generation (e.g. 11.331 when build 331 belongs to v12)
+        // returns a different generation's release.  The presigned URL embeds
+        // the real version; catch the mismatch before a download.  Best
+        // effort: an unparseable URL skips the check, and the entrypoint
+        // verifies the archive contents as the backstop.
+        const url_version = releaseURL.match(
+            /(?:releases\/|foundryvtt[^/]*?-)(\d+\.\d+(?:\.\d+)?)/i,
+        )?.[1];
+        if (url_version && url_version !== foundry_version) {
+            logger.error(
+                `Build ${foundry_build} belongs to Foundry Virtual Tabletop ` +
+                    `${url_version}, not the requested ${foundry_version}.  ` +
+                    `Version ${foundry_version} does not appear to exist.`,
+            );
+            return -1;
+        }
         process.stdout.write(releaseURL);
         return 0;
     } else {
